@@ -1,0 +1,3 @@
+import type { TransformResult } from "@/lib/api";
+export default function PlaneStack({result}:{result:TransformResult}){return <div className="panel section"><div className="label">Composited plane stack</div>{result.planes.map(p=>{const color=`rgb(${p.color.map(x=>Math.round(x*255)).join(",")})`;return <div className="plane" key={p.index}><span><i className="swatch" style={{background:color}}/>Plane {p.index}</span><span>{p.triangle_count} triangles · {p.contour_points} contour points</span></div>})}<p className="notice">Each plane is alpha-composited in visual order over Ω = [0,1]².</p></div>}
+

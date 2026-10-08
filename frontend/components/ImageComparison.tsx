@@ -1,0 +1,2 @@
+export default function ImageComparison({original,reconstructed}:{original:string;reconstructed:string}){return <div className="grid2"><div className="panel image-card"><div className="label">Original image</div><img src={original} alt="Original upload"/></div><div className="panel image-card"><div className="label">Fractal reconstruction</div><img src={reconstructed} alt="Fractal reconstruction"/></div></div>}
+

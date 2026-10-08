@@ -1,0 +1,3 @@
+const stages=["Reading image","Extracting closed contours","Building fractal planes","Triangulating the image","Applying fractal recursion","Projecting the planes","Writing the mathematical expression"];
+export default function ProcessingStages({active}:{active:boolean}){return <div className="panel section"><div className="label">Finite construction</div>{stages.map((stage,i)=><div className={`stage ${active?"active":""}`} key={stage}><i className="dot"/><span>{stage}</span>{active&&<span style={{marginLeft:"auto",fontSize:12}}>{i===0?"working":i<6?"queued":"finalizing"}</span>}</div>)}</div>}
+

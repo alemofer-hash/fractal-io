@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      BACKEND_PORT: ${BACKEND_PORT:-8000}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      MAX_PROCESSING_SECONDS: ${MAX_PROCESSING_SECONDS:-30}
+      DEFAULT_WORKING_SIZE: ${DEFAULT_WORKING_SIZE:-512}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_started
+
