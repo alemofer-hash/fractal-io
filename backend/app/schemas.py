@@ -12,6 +12,13 @@ class TransformResponse(BaseModel):
     plane_count: int
     contour_count: int
     triangle_count: int
+    base_triangle_count: int
+    leaf_triangle_count: int
+    adaptive_refinement: bool
+    mean_local_error: float
+    maximum_local_error: float
+    high_detail_regions: int
+    fallback_used: bool
     fractal_depth: int
     preview_data_url: str
     expression: str

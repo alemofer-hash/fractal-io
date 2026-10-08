@@ -25,13 +25,15 @@ pytest -q
 
 ## X² finite construction
 
-The backend normalizes the input to an RGBA function on Ω = `[0,1]²`, bounded to a working dimension (default 512). OpenCV deterministically quantizes RGB pixels into K color clusters. Connected components form significant regions `Ωk`; their simplified, closed exterior boundaries are `Γk`. Transparent pixels do not form planes.
+The backend normalizes the input to an RGBA function on Ω = `[0,1]²`, bounded to a working dimension (default 768). OpenCV deterministically quantizes perceptual CIE Lab pixels into 10–24 clusters. Morphology and connected components then form spatially independent regions `Ωk`; `RETR_CCOMP` retains parent/child contours rather than discarding internal boundaries. Transparent pixels do not form planes.
 
-Each region is triangulated with an interior-filtered Delaunay mesh (and a polygon fan fallback). For each root triangle `T=(p0,p1,p2)`, the affine map from the canonical triangle is `L(u,v)=p0+u(p1-p0)+v(p2-p0)`. It is split recursively into four children using edge midpoints, matching the four canonical triangular maps. At depth `d` the leaves implement the finite approximation `F(d)`; depth 3 is the UI default.
+Each region is triangulated with an interior-filtered Delaunay mesh (and a polygon fan fallback). Seeds include contour vertices, regular interior samples and deterministic samples around strong luminance gradients; probes reject triangles crossing concavities or holes. For each root triangle `T=(p0,p1,p2)`, the affine map from the canonical triangle is `L(u,v)=p0+u(p1-p0)+v(p2-p0)`.
 
-Vertex RGB samples define an affine color plane `P`. The local residual determines `α=clip(0.78ρ/(ρ+10^-8),0,0.85)`, so `|α|<1`; the conceptual correction is `Q=Pchild-αP∘S`. The rendered leaf color is the finite affine reconstruction. Planes are alpha-composited in descending region-area order. The output is therefore reconstructed from masks, contours, triangle leaves and finite rules—not saved as the only representation.
+The X² tree is adaptive rather than uniform. It scores each triangle with `E_total = E_color + 0.085 B_edge`, where `E_color` is the mean sampled affine RGB residual and `B_edge` is normalized local luminance gradient. A priority queue refines highest-score triangles first until the error threshold, maximum depth 6, 3,000-leaf target (5,000 API hard ceiling), or time guard is reached. Minimum depth 2 prevents coarse holes; smooth areas stop before detailed boundaries. The response reports base and leaf counts, error metrics, detail-region count and whether the time fallback was used.
 
-For normal images the server caps leaves and adapts detail before the 30-second budget. A valid but contour-poor image gets a regular full-image fallback plane.
+Vertex RGB samples define an affine color plane `P`. The local residual determines `α=clip(0.78ρ/(ρ+10^-8),0,0.85)`, so `|α|<1`; the correction is stored per leaf as `Q=Pchild-αPparent`. The renderer evaluates `α Pparent + Q` plus a barycentric, vertex-zero inherited texture residual. Thus α and Q directly alter the reconstructed pixels; with `α=0` it becomes ordinary affine interpolation. Planes are alpha-composited in descending region-area order. The output is therefore reconstructed from masks, contours, triangle leaves and finite rules—not saved as the only representation.
+
+For normal images the server caps leaves and stops priority refinement before the 30-second budget. A valid but contour-poor image gets a regular full-image fallback plane.
 
 ## API
 
