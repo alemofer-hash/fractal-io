@@ -4,7 +4,7 @@ import ImageDropzone from "@/components/ImageDropzone";
 import ProcessingStages from "@/components/ProcessingStages";
 import ImageComparison from "@/components/ImageComparison";
 import PlaneStack from "@/components/PlaneStack";
-import ExpressionPanel from "@/components/ExpressionPanel";
+import ExpressionCard from "@/components/ExpressionCard";
 import { transform, type TransformResult } from "@/lib/api";
 type State="empty"|"selected"|"processing"|"success"|"error";
 export default function Home() {
@@ -28,7 +28,7 @@ export default function Home() {
       <p className="notice">Adaptive refinement: mean local error {result.mean_local_error.toFixed(5)} · high-detail regions {result.high_detail_regions}</p>
       <p className="notice">Resolution pipeline: source {result.source_resolution.width}×{result.source_resolution.height} · analysis {result.analysis_resolution.width}×{result.analysis_resolution.height} · mesh {result.mesh_resolution.width}×{result.mesh_resolution.height} · render {result.render_resolution.width}×{result.render_resolution.height}</p>
       {result.quality_reduced && <p className="notice">The engine reduced detail to remain inside the processing budget.</p>}
-      <PlaneStack result={result}/><ExpressionPanel result={result}/>
+      <PlaneStack result={result}/><ExpressionCard result={result}/>
     </>}
   </main>;
 }

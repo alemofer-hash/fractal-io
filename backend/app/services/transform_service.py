@@ -12,7 +12,7 @@ from app.algorithm.contours import Region, extract_closed_regions
 from app.algorithm.triangulation import triangulate_region, build_root_triangle, build_projection_mesh, regular_triangular_fallback
 from app.algorithm.fractal_interpolation import refine_adaptive_triangles
 from app.algorithm.composition import compose_planes
-from app.algorithm.wolfram import emit_wolfram_expression, compact_wolfram_expression, build_wolfram_url
+from app.algorithm.wolfram import build_expression_model
 from app.config import DEFAULT_ANALYSIS_SIZE, DEFAULT_MESH_SIZE, DEFAULT_PREVIEW_SIZE, DEFAULT_RENDER_SIZE, MAX_PROCESSING_SECONDS
 
 def _preview_data_url(image: np.ndarray, max_dimension: int) -> str:
@@ -88,8 +88,14 @@ def transform_image(source: Image.Image, planes_count: int = 16, depth: int = 6,
         fallback = True
     projection = {"mask": (render_image[..., 3] > .02).astype(np.uint8), "contour": np.asarray([[0,0],[render_image.shape[1]-1,0],[render_image.shape[1]-1,render_image.shape[0]-1],[0,render_image.shape[0]-1]], dtype=np.float32), "color": tuple(render_image[..., :3].mean(axis=(0,1))), "triangles": leaves, "opacity": 1.0}
     reconstructed = compose_planes([projection], render_image.shape[:2])
-    expression = emit_wolfram_expression([projection], render_image.shape[1], render_image.shape[0])
-    wolfram_expression, compact = compact_wolfram_expression([projection], render_image.shape[1], render_image.shape[0])
+    expression_model = build_expression_model([projection], render_image.shape[1], render_image.shape[0])
+    preview_url = _preview_data_url(reconstructed, DEFAULT_PREVIEW_SIZE)
+    metadata = {
+        "width": render_image.shape[1], "height": render_image.shape[0],
+        "planes": len(planes), "contours": len(regions),
+        "triangles": len(leaves), "recursion_depth": max((leaf["depth"] for leaf in leaves), default=0),
+        "render_time_ms": round((time.monotonic() - started) * 1000),
+    }
     return {
         "success": True,
         "original": {"width": original_size[0], "height": original_size[1], "format": source.format or "UNKNOWN"},
@@ -103,9 +109,14 @@ def transform_image(source: Image.Image, planes_count: int = 16, depth: int = 6,
         "mesh_resolution": {"width": mesh_image.shape[1], "height": mesh_image.shape[0]},
         "render_resolution": {"width": render_image.shape[1], "height": render_image.shape[0]},
         "preview_resolution": {"max_dimension": DEFAULT_PREVIEW_SIZE},
-        "fractal_depth": max((leaf["depth"] for leaf in leaves), default=0), "preview_data_url": _preview_data_url(reconstructed, DEFAULT_PREVIEW_SIZE),
-        "expression": expression, "wolfram_expression": wolfram_expression,
-        "wolfram_url": build_wolfram_url(wolfram_expression), "wolfram_uses_compact_expression": compact,
+        "fractal_depth": metadata["recursion_depth"], "preview_data_url": preview_url, "image_url": preview_url,
+        "expression": expression_model, "metadata": metadata,
+        # Flat aliases keep older local clients working while the structured
+        # expression object becomes the canonical contract.
+        "wolfram_expression": expression_model["wolfram_code"],
+        "wolfram_url": expression_model["wolfram_url"],
+        "wolfram_uses_compact_expression": expression_model["wolfram_uses_compact_expression"],
+        "download_filename": expression_model["download_filename"],
         "planes": [{"index": i + 1, "color": [round(v, 3) for v in p["color"]], "triangle_count": p["base_triangle_count"], "contour_points": len(p["contour"])} for i, p in enumerate(planes)],
         "quality_reduced": bool(fallback or adaptive_metrics["fallback_used"]),
     }

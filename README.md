@@ -43,7 +43,7 @@ For normal images the server caps leaves and stops priority refinement before th
 
 `POST /transform` accepts multipart `file`, `quality`, `planes_count`, `fractal_depth`, and `max_triangles`. Valid formats are PNG, JPEG/JPG, WEBP, BMP and first-frame GIF. The server verifies extension, image MIME, byte cap, decode integrity, decompression-bomb safety and dimensions. The hard limit is 50 MB.
 
-The response contains the data-url preview, complete `.wl` expression, safe Wolfram expression/URL, statistics, and plane metadata. Wolfram expressions use normalized `[0,1]²` coordinates in `GraphicsComplex`, rather than raw image pixels. When the complete expression is too long for a robust URL, the backend samples final triangles until the compact visual expression actually fits a 7,000-character bound; the page clearly discloses this and the `.wl` download remains complete.
+The response contains `image_url`, a structured `expression` object (`latex`, `plain_text`, `wolfram_code`, `wolfram_url`, and `download_filename`), and a structured `metadata` object. All serializers are generated from the same final triangular field. Wolfram expressions use normalized `[0,1]²` coordinates in `GraphicsComplex`, rather than raw image pixels, and valid Wolfram square-bracket syntax such as `RGBColor[...]`, `Opacity[...]`, and `Directive[...]`. When the complete expression is too long for a robust URL, the backend samples final triangles until the compact visual expression actually fits a 7,000-character bound; the page clearly discloses this and the `.wl` download remains complete.
 
 ## Deployment
 

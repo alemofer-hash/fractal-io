@@ -5,8 +5,29 @@ class RuleSummary(BaseModel):
     contraction_limit: float = 0.85
     subdivision_maps: int = 4
 
+class ExpressionPayload(BaseModel):
+    latex: str
+    plain_text: str
+    wolfram_code: str
+    wolfram_url: str
+    download_filename: str = "fractal-expression.wl"
+    wolfram_uses_compact_expression: bool = False
+    wolfram_url_expression: str | None = None
+
+class TransformMetadata(BaseModel):
+    width: int
+    height: int
+    planes: int
+    contours: int
+    triangles: int
+    recursion_depth: int
+    render_time_ms: int
+
 class TransformResponse(BaseModel):
     success: bool
+    image_url: str
+    expression: ExpressionPayload
+    metadata: TransformMetadata
     original: dict
     processing_time_ms: int
     plane_count: int
@@ -26,7 +47,7 @@ class TransformResponse(BaseModel):
     preview_resolution: dict
     fractal_depth: int
     preview_data_url: str
-    expression: str
+    # Legacy aliases retained for existing local clients.
     wolfram_expression: str
     wolfram_url: str
     wolfram_uses_compact_expression: bool

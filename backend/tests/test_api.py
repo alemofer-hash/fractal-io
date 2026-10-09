@@ -53,11 +53,16 @@ def test_transform_returns_preview_expression_and_wolfram_url():
     body = response.json()
     assert body["success"] and body["plane_count"] >= 1 and body["triangle_count"] >= 1
     assert body["preview_data_url"].startswith("data:image/png;base64,")
-    assert body["expression"].startswith("Graphics[")
+    assert body["expression"]["latex"].startswith(r"\begin{aligned}")
+    assert body["expression"]["plain_text"].startswith("I(x,y)")
+    assert body["expression"]["wolfram_code"].startswith("Graphics[")
+    assert body["expression"]["wolfram_url"].startswith("https://www.wolframalpha.com/input?i=")
+    assert body["image_url"].startswith("data:image/png;base64,")
+    assert body["metadata"]["render_time_ms"] >= 0
     assert body["wolfram_url"].startswith("https://www.wolframalpha.com/input?i=")
     assert body["adaptive_refinement"] and body["leaf_triangle_count"] == body["triangle_count"]
     assert body["analysis_resolution"]["width"] <= 768 and body["render_resolution"]["width"] <= 1024
-    assert "GraphicsComplex" in body["expression"]
+    assert "GraphicsComplex" in body["expression"]["wolfram_code"]
 
 def test_invalid_upload_is_rejected():
     response = client.post("/transform", files={"file": ("bad.txt", b"not image", "text/plain")})
@@ -98,6 +103,17 @@ def test_wolfram_coordinates_are_normalized_and_compacted_as_graphics_complex():
     assert "GraphicsComplex" in expression
     assert "{1.000000,1.000000}" in expression
     assert "{199.000000" not in expression
+    assert "RGBColor[" in expression and "Opacity[" in expression
+    assert "RGBColor(" not in expression and "Opacity(" not in expression
+    assert expression.count("[") == expression.count("]")
+    assert expression.count("{") == expression.count("}")
     many = [{**leaf, "vertices": leaf["vertices"] + np.asarray([index % 7, index // 7], dtype=np.float32)} for index in range(200)]
     compact, was_compacted = compact_wolfram_expression([{"triangles": many}], 300, 200)
     assert was_compacted and len(compact) <= 7000 and "GraphicsComplex" in compact
+
+def test_same_input_has_deterministic_structured_expression():
+    payload = png_bytes()
+    first = client.post("/transform", files={"file": ("test.png", payload, "image/png")}, data={"planes_count": 3, "fractal_depth": 2, "max_triangles": 128}).json()
+    second = client.post("/transform", files={"file": ("test.png", payload, "image/png")}, data={"planes_count": 3, "fractal_depth": 2, "max_triangles": 128}).json()
+    assert first["expression"] == second["expression"]
+    assert first["metadata"]["triangles"] == second["metadata"]["triangles"]
