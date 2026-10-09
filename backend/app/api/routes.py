@@ -37,7 +37,7 @@ def _validate_file(name: str, content_type: str | None, data: bytes) -> Image.Im
         raise HTTPException(422, "This image is corrupted or unsafe to process.")
 
 @router.post("/transform", response_model=TransformResponse)
-async def transform(file: UploadFile = File(...), quality: str = Form("balanced"), planes_count: int = Form(16), fractal_depth: int = Form(6), max_triangles: int = Form(3000)):
+async def transform(file: UploadFile = File(...), quality: str = Form("balanced"), planes_count: int = Form(16), fractal_depth: int = Form(6), max_triangles: int = Form(4000)):
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     image = _validate_file(file.filename or "upload", file.content_type, data)
     return transform_image(image, max(10, min(24, planes_count)), max(2, min(6, fractal_depth)), max(128, min(5000, max_triangles)), quality)

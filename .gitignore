@@ -10,6 +10,7 @@ coverage/
 dist/
 work/
 uploads/
+outputs/
 *.log
 *.png
 *.jpg

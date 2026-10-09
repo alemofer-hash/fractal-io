@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from app.algorithm.normalize import normalize_image
 from app.algorithm.quantization import quantize_colors
 from app.algorithm.contours import extract_closed_regions
-from app.algorithm.triangulation import triangulate_region, build_root_triangle, regular_triangular_fallback
+from app.algorithm.triangulation import triangulate_region, build_root_triangle, build_projection_mesh, regular_triangular_fallback
 from app.algorithm.fractal_interpolation import refine_adaptive_triangles
 from app.algorithm.composition import compose_planes
 from app.algorithm.wolfram import emit_wolfram_expression, compact_wolfram_expression, build_wolfram_url
@@ -26,7 +26,7 @@ def _gradient(image: np.ndarray) -> np.ndarray:
     magnitude = cv2.magnitude(gx, gy); scale = float(np.percentile(magnitude, 97))
     return np.clip(magnitude / max(scale, 1e-6), 0, 1)
 
-def transform_image(source: Image.Image, planes_count: int = 16, depth: int = 6, max_triangles: int = 3000, quality: str = "balanced") -> dict:
+def transform_image(source: Image.Image, planes_count: int = 16, depth: int = 6, max_triangles: int = 4000, quality: str = "balanced") -> dict:
     started = time.monotonic()
     original_size = source.size
     working_size = {"draft": 512, "balanced": DEFAULT_WORKING_SIZE, "detail": min(768, DEFAULT_WORKING_SIZE)}.get(quality, DEFAULT_WORKING_SIZE)
@@ -39,50 +39,44 @@ def transform_image(source: Image.Image, planes_count: int = 16, depth: int = 6,
         raw = regular_triangular_fallback(image)[0]
         from app.algorithm.contours import Region
         regions = [Region(**raw)]
-    candidates: list[tuple[float, dict]] = []; reserved: list[tuple[float, dict]] = []
+    roots: list[dict] = []
     for plane_id, region in enumerate(regions):
-        roots = triangulate_region(region.contour, region.mask, max_triangles=72, gradient=gradient)
-        scored = []
-        for triangle in roots:
-            center = np.rint(triangle.mean(axis=0)).astype(int)
-            variation = float(np.var(image[np.clip(center[1],0,image.shape[0]-1), np.clip(center[0],0,image.shape[1]-1), :3]))
-            scored.append((float(gradient[center[1], center[0]] + variation), build_root_triangle(triangle, image, plane_id)))
-        scored.sort(key=lambda item: item[0], reverse=True)
-        if scored: reserved.append(scored[0]); candidates.extend(scored[1:])
-    # One root keeps each spatial component represented; remaining roots go to the highest-detail areas.
-    base_target = min(max(1, max_triangles // 16), 72)
-    selected = reserved[:base_target]
-    selected.extend(sorted(candidates, key=lambda item: item[0], reverse=True)[:max(0, base_target-len(selected))])
-    roots = [node for _, node in selected]
+        # Never cap a complex closed contour below n - 2 base triangles.
+        base = triangulate_region(region.contour, region.mask, max_triangles=max(96, len(region.contour) - 2), gradient=gradient, holes=region.holes)
+        roots.extend(build_root_triangle(triangle, image, plane_id) for triangle in base)
     if roots:
-        leaves, adaptive_metrics = refine_adaptive_triangles(roots, image, gradient, max_triangles=max_triangles, min_depth=2, max_depth=max(2, min(6, depth)), deadline=started + MAX_PROCESSING_SECONDS * .83)
+        # The closed-region meshes validate each plane. A full-domain projection mesh is
+        # composed last so Lab labels never turn smooth lighting into flat class colours.
+        projection_roots = [build_root_triangle(triangle, image, -1) for triangle in build_projection_mesh(image.shape[:2], cell_size=72)]
+        leaves, adaptive_metrics = refine_adaptive_triangles(projection_roots, image, gradient, max_triangles=max_triangles, min_depth=2, max_depth=max(2, min(6, depth)), deadline=started + MAX_PROCESSING_SECONDS * .83)
     else:
         leaves, adaptive_metrics = [], {"mean_local_error": 0.0, "maximum_local_error": 0.0, "fallback_used": True}
-    plane_leaves: dict[int, list[dict]] = {}
-    for leaf in leaves: plane_leaves.setdefault(leaf["plane_id"], []).append(leaf)
-    planes = [{"mask": region.mask, "contour": region.contour, "color": region.color, "triangles": plane_leaves.get(plane_id, []), "opacity": 1.0} for plane_id, region in enumerate(regions) if plane_leaves.get(plane_id)]
+    per_plane_base: dict[int, int] = {}
+    for root in roots: per_plane_base[root["plane_id"]] = per_plane_base.get(root["plane_id"], 0) + 1
+    planes = [{"mask": region.mask, "contour": region.contour, "color": region.color, "triangles": [], "base_triangle_count": per_plane_base.get(plane_id, 0), "opacity": 1.0} for plane_id, region in enumerate(regions) if per_plane_base.get(plane_id)]
     if not planes:
         # A valid raster always gets a finite fallback construction.
         raw = regular_triangular_fallback(image)[0]
         tri = np.asarray([[0,0], [image.shape[1]-1,0], [0,image.shape[0]-1]], dtype=np.float32)
         leaves, adaptive_metrics = refine_adaptive_triangles([build_root_triangle(tri, image, 0)], image, gradient, max_triangles=min(max_triangles, 64), min_depth=1, max_depth=2)
-        planes = [{**raw, "triangles": leaves, "opacity": 1.0}]
-        roots = [build_root_triangle(tri, image, 0)]
+        planes = [{**raw, "triangles": leaves, "base_triangle_count": 1, "opacity": 1.0}]
+        roots = [build_root_triangle(tri, image, 0)]; projection_roots = roots
         fallback = True
-    reconstructed = compose_planes(planes, image.shape[:2])
-    expression = emit_wolfram_expression(planes, image.shape[0])
-    wolfram_expression, compact = compact_wolfram_expression(planes, image.shape[0])
+    projection = {"mask": (image[..., 3] > .02).astype(np.uint8), "contour": np.asarray([[0,0],[image.shape[1]-1,0],[image.shape[1]-1,image.shape[0]-1],[0,image.shape[0]-1]], dtype=np.float32), "color": tuple(image[..., :3].mean(axis=(0,1))), "triangles": leaves, "opacity": 1.0}
+    reconstructed = compose_planes([projection], image.shape[:2])
+    expression = emit_wolfram_expression([projection], image.shape[0])
+    wolfram_expression, compact = compact_wolfram_expression([projection], image.shape[0])
     return {
         "success": True,
         "original": {"width": original_size[0], "height": original_size[1], "format": source.format or "UNKNOWN"},
         "processing_time_ms": round((time.monotonic() - started) * 1000),
         "plane_count": len(planes), "contour_count": len(regions), "triangle_count": len(leaves),
-        "base_triangle_count": len(roots), "leaf_triangle_count": len(leaves), "adaptive_refinement": True,
+        "base_triangle_count": len(roots) + len(projection_roots), "leaf_triangle_count": len(leaves), "adaptive_refinement": True,
         "mean_local_error": round(adaptive_metrics["mean_local_error"], 7), "maximum_local_error": round(adaptive_metrics["maximum_local_error"], 7),
-        "high_detail_regions": len({leaf["plane_id"] for leaf in leaves if leaf["depth"] > 2}), "fallback_used": bool(fallback or adaptive_metrics["fallback_used"]),
+        "high_detail_regions": sum(1 for leaf in leaves if leaf["depth"] > 2), "fallback_used": bool(fallback or adaptive_metrics["fallback_used"]),
         "fractal_depth": max((leaf["depth"] for leaf in leaves), default=0), "preview_data_url": _preview_data_url(reconstructed),
         "expression": expression, "wolfram_expression": wolfram_expression,
         "wolfram_url": build_wolfram_url(wolfram_expression), "wolfram_uses_compact_expression": compact,
-        "planes": [{"index": i + 1, "color": [round(v, 3) for v in p["color"]], "triangle_count": len(p["triangles"]), "contour_points": len(p["contour"])} for i, p in enumerate(planes)],
+        "planes": [{"index": i + 1, "color": [round(v, 3) for v in p["color"]], "triangle_count": p["base_triangle_count"], "contour_points": len(p["contour"])} for i, p in enumerate(planes)],
         "quality_reduced": bool(fallback or adaptive_metrics["fallback_used"]),
     }

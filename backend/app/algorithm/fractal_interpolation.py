@@ -58,16 +58,21 @@ def refine_fractal_triangle(node: dict, depth: int, output: list[dict], budget: 
 
 def refine_adaptive_triangles(roots: list[dict], image: np.ndarray, gradient: np.ndarray, max_triangles: int = 3000, min_depth: int = 2, max_depth: int = 6, error_threshold: float = .006, deadline: float | None = None) -> tuple[list[dict], dict]:
     """Best-first 4-way recursion: detail gets budget before smooth regions do."""
-    serial = count(); heap: list[tuple[float,int,dict]] = []
-    for root in roots:
-        item = _node(root["vertices"], image, gradient, root.get("plane_id",0), 0)
-        heapq.heappush(heap, (-item["score"], next(serial), item))
+    serial = count(); nodes = [_node(root["vertices"], image, gradient, root.get("plane_id",0), 0) for root in roots]
+    # Complete the required coarse scale breadth-first. A pure priority queue can otherwise
+    # keep refining one sharp eye/hair triangle while leaving smooth face triangles at depth 0.
+    for _ in range(min_depth):
+        if len(nodes) * 4 > max_triangles: break
+        if deadline and time.monotonic() >= deadline: break
+        nodes = [child for node in nodes for child in _children(node, image, gradient)]
+    heap: list[tuple[float,int,dict]] = [(-item["score"], next(serial), item) for item in nodes]
+    heapq.heapify(heap)
     leaf_count = len(heap); fallback = False; leaves: list[dict] = []
     while heap:
         if deadline and time.monotonic() >= deadline:
             fallback = True; leaves.extend(item for _,_,item in heap); break
-        _, _, item = heapq.heappop(heap); must_refine = item["depth"] < min_depth; should_refine = item["depth"] < max_depth and item["score"] > error_threshold
-        if (must_refine or should_refine) and item["depth"] < max_depth and leaf_count + 3 <= max_triangles:
+        _, _, item = heapq.heappop(heap); should_refine = item["depth"] < max_depth and item["score"] > error_threshold
+        if should_refine and item["depth"] < max_depth and leaf_count + 3 <= max_triangles:
             for child in _children(item, image, gradient): heapq.heappush(heap, (-child["score"], next(serial), child))
             leaf_count += 3
         else: leaves.append(item)

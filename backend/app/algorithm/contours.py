@@ -14,8 +14,24 @@ class Region:
 def simplify_closed_contour(contour: np.ndarray, epsilon_ratio: float = 0.002) -> np.ndarray:
     perimeter = cv2.arcLength(contour, True)
     # Keep high-curvature facial/garment boundaries instead of flattening them.
-    simplified = cv2.approxPolyDP(contour, max(0.45, perimeter * epsilon_ratio), True)
-    return simplified.reshape(-1, 2)
+    points = cv2.approxPolyDP(contour, max(0.45, perimeter * epsilon_ratio), True).reshape(-1, 2).astype(np.float32)
+    # Remove only duplicate / nearly-collinear raster samples. This retains curvature while
+    # making the closed polygon valid for deterministic ear clipping.
+    changed = True
+    while changed and len(points) > 3:
+        changed = False; kept = []
+        for index, point in enumerate(points):
+            previous, following = points[(index - 1) % len(points)], points[(index + 1) % len(points)]
+            left, right = point - previous, following - point
+            denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+            cross = float(left[0] * right[1] - left[1] * right[0])
+            sine = abs(cross) / denominator if denominator > 1e-6 else 0.0
+            if denominator <= 1e-6 or sine < .008:
+                changed = True; continue
+            kept.append(point)
+        if len(kept) >= 3: points = np.asarray(kept, dtype=np.float32)
+        else: break
+    return points
 
 def extract_closed_regions(labels: np.ndarray, centers: np.ndarray, min_area: int = 20, limit: int = 32, image: np.ndarray | None = None) -> list[Region]:
     regions: list[Region] = []
@@ -30,7 +46,9 @@ def extract_closed_regions(labels: np.ndarray, centers: np.ndarray, min_area: in
             area = int(stats[component_id, cv2.CC_STAT_AREA])
             if area < min_area:
                 continue
-            mask = (components == component_id).astype(np.uint8)
+            # Morphology establishes connectivity only. Rendering masks remain the original
+            # mutually-exclusive Lab labels, so later planes cannot paint over another field.
+            mask = ((components == component_id) & (labels == label)).astype(np.uint8)
             contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
             if not contours:
                 continue

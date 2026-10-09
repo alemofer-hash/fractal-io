@@ -1,5 +1,6 @@
 import io
 import time
+import cv2
 import numpy as np
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -7,6 +8,7 @@ from app.main import app
 from app.algorithm.fractal_interpolation import refine_adaptive_triangles
 from app.algorithm.triangulation import build_root_triangle
 from app.algorithm.composition import compose_planes
+from app.algorithm.triangulation import triangulate_region
 
 client = TestClient(app)
 
@@ -77,3 +79,12 @@ def test_alpha_and_q_change_rendered_fractal_leaf_colours():
     for leaf in leaves: leaf["alpha"] = 0
     affine_only = compose_planes([plane], (48,48))
     assert not np.allclose(fractal, affine_only)
+
+def test_complex_closed_contour_keeps_real_base_triangulation():
+    contour = np.asarray([[4,4],[56,4],[56,16],[40,16],[40,28],[56,28],[56,56],[4,56],[4,40],[20,40],[20,28],[4,28]], dtype=np.float32)
+    mask = np.zeros((64,64), dtype=np.uint8); cv2.fillPoly(mask, [contour.astype(np.int32)], 1)
+    triangles = triangulate_region(contour, mask, max_triangles=4, holes=[])
+    assert len(triangles) >= len(contour) - 2
+    for triangle in triangles:
+        centroid = np.rint(triangle.mean(axis=0)).astype(int)
+        assert mask[centroid[1], centroid[0]]
