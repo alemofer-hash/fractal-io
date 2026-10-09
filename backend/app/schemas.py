@@ -19,6 +19,11 @@ class TransformResponse(BaseModel):
     maximum_local_error: float
     high_detail_regions: int
     fallback_used: bool
+    source_resolution: dict
+    analysis_resolution: dict
+    mesh_resolution: dict
+    render_resolution: dict
+    preview_resolution: dict
     fractal_depth: int
     preview_data_url: str
     expression: str

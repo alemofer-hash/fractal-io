@@ -26,6 +26,7 @@ export default function Home() {
       <ImageComparison original={preview} reconstructed={result.preview_data_url}/>
       <div className="metrics">{[[result.plane_count,"planes"],[result.contour_count,"contours"],[result.base_triangle_count,"base triangles"],[result.leaf_triangle_count,"adaptive triangles"],[result.fractal_depth,"fractal depth"],[`${result.processing_time_ms}ms`,"process time"]].map(([value,label]) => <div className="metric" key={String(label)}><strong>{value}</strong><span>{label}</span></div>)}</div>
       <p className="notice">Adaptive refinement: mean local error {result.mean_local_error.toFixed(5)} · high-detail regions {result.high_detail_regions}</p>
+      <p className="notice">Resolution pipeline: source {result.source_resolution.width}×{result.source_resolution.height} · analysis {result.analysis_resolution.width}×{result.analysis_resolution.height} · mesh {result.mesh_resolution.width}×{result.mesh_resolution.height} · render {result.render_resolution.width}×{result.render_resolution.height}</p>
       {result.quality_reduced && <p className="notice">The engine reduced detail to remain inside the processing budget.</p>}
       <PlaneStack result={result}/><ExpressionPanel result={result}/>
     </>}

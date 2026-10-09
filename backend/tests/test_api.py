@@ -9,6 +9,7 @@ from app.algorithm.fractal_interpolation import refine_adaptive_triangles
 from app.algorithm.triangulation import build_root_triangle
 from app.algorithm.composition import compose_planes
 from app.algorithm.triangulation import triangulate_region
+from app.algorithm.wolfram import compact_wolfram_expression, emit_wolfram_expression
 
 client = TestClient(app)
 
@@ -55,6 +56,8 @@ def test_transform_returns_preview_expression_and_wolfram_url():
     assert body["expression"].startswith("Graphics[")
     assert body["wolfram_url"].startswith("https://www.wolframalpha.com/input?i=")
     assert body["adaptive_refinement"] and body["leaf_triangle_count"] == body["triangle_count"]
+    assert body["analysis_resolution"]["width"] <= 768 and body["render_resolution"]["width"] <= 1024
+    assert "GraphicsComplex" in body["expression"]
 
 def test_invalid_upload_is_rejected():
     response = client.post("/transform", files={"file": ("bad.txt", b"not image", "text/plain")})
@@ -88,3 +91,13 @@ def test_complex_closed_contour_keeps_real_base_triangulation():
     for triangle in triangles:
         centroid = np.rint(triangle.mean(axis=0)).astype(int)
         assert mask[centroid[1], centroid[0]]
+
+def test_wolfram_coordinates_are_normalized_and_compacted_as_graphics_complex():
+    leaf = {"vertices": np.asarray([[0,0],[199,0],[0,99]], dtype=np.float32), "colors": np.asarray([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]), "field_color": np.asarray([.2,.4,.6]), "opacity": 1.0}
+    expression = emit_wolfram_expression([{"triangles": [leaf]}], 200, 100)
+    assert "GraphicsComplex" in expression
+    assert "{1.000000,1.000000}" in expression
+    assert "{199.000000" not in expression
+    many = [{**leaf, "vertices": leaf["vertices"] + np.asarray([index % 7, index // 7], dtype=np.float32)} for index in range(200)]
+    compact, was_compacted = compact_wolfram_expression([{"triangles": many}], 300, 200)
+    assert was_compacted and len(compact) <= 7000 and "GraphicsComplex" in compact

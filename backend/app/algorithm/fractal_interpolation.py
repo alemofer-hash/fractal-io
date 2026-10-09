@@ -1,11 +1,19 @@
 from __future__ import annotations
 import heapq
 import time
+from math import factorial
 from itertools import count
 import numpy as np
 from .subdivision import subdivide_triangle
 
 _SAMPLES = np.asarray([[1/3,1/3,1/3],[.5,.5,0],[.5,0,.5],[0,.5,.5],[.6,.2,.2],[.2,.6,.2],[.2,.2,.6]], dtype=np.float32)
+# A high-order, finite triangular colour field retains sub-triangle detail without
+# rasterising the final preview.  Degree 8 gives 45 source controls per leaf;
+# together with adaptive leaves this keeps photographic transitions crisp while
+# staying inside the CPU budget.
+_TEXTURE_DEGREE = 8
+_TEXTURE_EXPONENTS = np.asarray([(i, j, _TEXTURE_DEGREE - i - j) for i in range(_TEXTURE_DEGREE + 1) for j in range(_TEXTURE_DEGREE + 1 - i)], dtype=np.int8)
+_TEXTURE_COEFFICIENTS = np.asarray([factorial(_TEXTURE_DEGREE) / (factorial(int(i)) * factorial(int(j)) * factorial(int(k))) for i, j, k in _TEXTURE_EXPONENTS], dtype=np.float32)
 
 def _sample(image: np.ndarray, points: np.ndarray) -> np.ndarray:
     """Bilinear RGB(A) sampling; avoids blocky nearest-pixel triangle colours."""
@@ -31,9 +39,13 @@ def _node(vertices: np.ndarray, image: np.ndarray, gradient: np.ndarray, plane_i
     sample_points = _points(vertices); weights = _barycentric(vertices, sample_points)
     predicted = weights @ colors; observed = _sample(image, sample_points)[:, :3]; residuals = observed - predicted
     color_error = float(np.mean(np.sum(residuals * residuals, axis=1))); edge_error = _gradient_at(gradient, sample_points); center_texture = residuals[0]
+    texture_weights = _TEXTURE_EXPONENTS.astype(np.float32) / _TEXTURE_DEGREE
+    texture_controls = _sample(image, texture_weights @ vertices)[:, :3]
     if parent_colors is None: parent_colors = colors.copy()
     rho = color_error; fractal_alpha = float(np.clip(.78 * rho / (rho + 1e-8), 0, .85)); q_colors = colors - fractal_alpha * parent_colors
-    return {"vertices": vertices.astype(np.float32), "colors": colors, "opacity": float(alpha_values.mean()), "depth": depth, "plane_id": plane_id,
+    center_linear = colors.mean(axis=0); center_parent = parent_colors.mean(axis=0); center_q = q_colors.mean(axis=0)
+    field_color = np.clip(fractal_alpha * center_parent + center_q + fractal_alpha * center_texture + (observed[0] - center_linear), 0, 1)
+    return {"vertices": vertices.astype(np.float32), "colors": colors, "texture_controls": texture_controls, "field_color": field_color, "opacity": float(alpha_values.mean()), "depth": depth, "plane_id": plane_id,
             "error": color_error, "edge_error": edge_error, "score": color_error + .085 * edge_error, "alpha": fractal_alpha,
             "q_colors": q_colors, "parent_colors": parent_colors, "parent_texture": center_texture if parent_texture is None else (parent_texture + center_texture) * .5}
 
